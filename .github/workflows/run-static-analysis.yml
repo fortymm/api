@@ -1,0 +1,84 @@
+name: Run Static Analysis
+
+on: push
+
+jobs:
+  run-the-unit-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+
+      - name: Checkout the code
+        uses: actions/checkout@v4
+
+      - name: Install asdf & tools
+        uses: asdf-vm/actions/install@v3
+
+      - name: Install dependencies
+        run: bundle install
+
+      - name: Run the unit tests
+        env:
+           DATABASE_URL: postgres://postgres:postgres@localhost/postgres
+        run: ./bin/rails test
+
+  run-the-end-to-end-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+
+      - name: Checkout the end to end tests
+        uses: actions/checkout@v4
+        with:
+          repository: "fortymm/web-client-end-to-end-tests"
+          path: web-client-end-to-end-tests
+
+      - name: Checkout the web client
+        uses: actions/checkout@v4
+        with:
+          repository: "fortymm/web-client"
+          path: web-client
+
+      - name: Install asdf & tools
+        uses: asdf-vm/actions/install@v3
+
+      - name: Install the web client server dependencies
+        working-directory: web-client
+        run: npm ci
+
+      - name: Build the web client server
+        working-directory: web-client
+        run: npm run build
+
+      - name: Serve the web client
+        working-directory: web-client
+        run: npm run preview &
+
+      - name: Install the test dependencies
+        working-directory: web-client-end-to-end-tests
+        run: npm ci
+
+      - name: Install the test browsers
+        working-directory: web-client-end-to-end-tests
+        run: npx playwright install --with-deps
+
+      - name: Run the end to end tests
+        working-directory: web-client-end-to-end-tests
+        run: npx playwright test
