@@ -20,7 +20,7 @@ defmodule FortymmApiWeb.Router do
     get "/", PageController, :home
   end
 
-  scope "/matches", FortymmApiWeb do
+  scope "/api/matches", FortymmApiWeb do
     pipe_through :api
 
     get "/new/opponents", OpponentsController, :index
