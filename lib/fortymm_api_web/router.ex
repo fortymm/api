@@ -20,10 +20,11 @@ defmodule FortymmApiWeb.Router do
     get "/", PageController, :home
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", FortymmApiWeb do
-  #   pipe_through :api
-  # end
+  scope "/matches", FortymmApiWeb do
+    pipe_through :api
+
+    get "/new/opponents", OpponentsController, :index
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:fortymm_api, :dev_routes) do
