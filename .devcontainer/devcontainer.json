@@ -1,0 +1,44 @@
+{
+  "name": "Fortymm API",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "jakebecker.elixir-ls",
+        "pantajoe.vscode-elixir-credo",
+        "bradlc.vscode-tailwindcss",
+        "phoenixframework.phoenix"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "elixirLS.dialyzerEnabled": true,
+        "elixirLS.fetchDeps": false,
+        "elixirLS.suggestSpecs": true
+      }
+    }
+  },
+
+  "forwardPorts": [4000, 5432],
+  "portsAttributes": {
+    "4000": {
+      "label": "Phoenix Server",
+      "onAutoForward": "notify"
+    },
+    "5432": {
+      "label": "PostgreSQL",
+      "onAutoForward": "silent"
+    }
+  },
+
+  "postCreateCommand": "mix deps.get && mix ecto.setup && mix assets.setup",
+
+  "remoteUser": "vscode"
+}
