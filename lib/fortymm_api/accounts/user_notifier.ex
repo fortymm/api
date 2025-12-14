@@ -6,15 +6,19 @@ defmodule FortymmApi.Accounts.UserNotifier do
 
   # Delivers the email using the application mailer.
   defp deliver(recipient, subject, body) do
-    email =
-      new()
-      |> to(recipient)
-      |> from({"FortymmApi", "contact@example.com"})
-      |> subject(subject)
-      |> text_body(body)
+    if is_nil(recipient) || recipient == "" do
+      {:error, :no_email}
+    else
+      email =
+        new()
+        |> to(recipient)
+        |> from({"FortymmApi", "contact@example.com"})
+        |> subject(subject)
+        |> text_body(body)
 
-    with {:ok, _metadata} <- Mailer.deliver(email) do
-      {:ok, email}
+      with {:ok, _metadata} <- Mailer.deliver(email) do
+        {:ok, email}
+      end
     end
   end
 
@@ -26,7 +30,7 @@ defmodule FortymmApi.Accounts.UserNotifier do
 
     ==============================
 
-    Hi #{user.email},
+    Hi #{user.username},
 
     You can change your email by visiting the URL below:
 
@@ -53,7 +57,7 @@ defmodule FortymmApi.Accounts.UserNotifier do
 
     ==============================
 
-    Hi #{user.email},
+    Hi #{user.username},
 
     You can log into your account by visiting the URL below:
 
@@ -70,7 +74,7 @@ defmodule FortymmApi.Accounts.UserNotifier do
 
     ==============================
 
-    Hi #{user.email},
+    Hi #{user.username},
 
     You can confirm your account by visiting the URL below:
 

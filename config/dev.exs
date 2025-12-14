@@ -1,5 +1,8 @@
 import Config
 
+# Allow insecure cookies in development
+config :fortymm_api, :session_cookie_secure, false
+
 # Configure your database
 config :fortymm_api, FortymmApi.Repo,
   username: "postgres",

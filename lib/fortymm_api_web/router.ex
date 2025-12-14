@@ -17,6 +17,13 @@ defmodule FortymmApiWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :rate_limited do
+    plug FortymmApiWeb.Plugs.RateLimiter,
+      limit: 10,
+      interval_ms: 60_000,
+      id_prefix: "api_session"
+  end
+
   scope "/", FortymmApiWeb do
     pipe_through :browser
 
@@ -30,7 +37,7 @@ defmodule FortymmApiWeb.Router do
   end
 
   scope "/api/v1", FortymmApiWeb do
-    pipe_through :api
+    pipe_through [:api, :rate_limited]
 
     get "/session", SessionController, :index
   end

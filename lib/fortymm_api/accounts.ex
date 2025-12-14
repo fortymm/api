@@ -76,8 +76,88 @@ defmodule FortymmApi.Accounts do
   """
   def register_user(attrs) do
     %User{}
+    |> User.username_changeset(attrs)
     |> User.email_changeset(attrs)
     |> Repo.insert()
+  end
+
+  @doc """
+  Creates an anonymous user with auto-generated username.
+  Retries up to 5 times on username collision.
+  """
+  def create_anonymous_user(attrs \\ %{}, retry_count \\ 0) do
+    changeset = User.anonymous_registration_changeset(attrs)
+
+    case Repo.insert(changeset) do
+      {:ok, user} ->
+        {:ok, user}
+
+      {:error, %Ecto.Changeset{errors: errors} = changeset} ->
+        # Check if error is username collision
+        username_collision? =
+          Enum.any?(errors, fn {field, {_msg, opts}} ->
+            field == :username && Keyword.get(opts, :constraint) == :unique
+          end)
+
+        if username_collision? && retry_count < 5 do
+          create_anonymous_user(attrs, retry_count + 1)
+        else
+          {:error, changeset}
+        end
+    end
+  end
+
+  @doc """
+  Gets a user by username (case-insensitive).
+  """
+  def get_user_by_username(username) when is_binary(username) do
+    from(u in User, where: fragment("lower(?)", u.username) == ^String.downcase(username))
+    |> Repo.one()
+  end
+
+  @doc """
+  Updates the user's username.
+  """
+  def update_username(user, attrs) do
+    user
+    |> User.username_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
+  Adds email to an anonymous user account.
+  This is the first step in upgrading an anonymous user.
+  """
+  def add_email_to_user(user, email) do
+    user
+    |> User.add_email_changeset(%{email: email})
+    |> Repo.update()
+  end
+
+  @doc """
+  Merges an anonymous user account into an existing target user account.
+  Transfers all data from anonymous_user to target_user, then deletes anonymous_user.
+
+  Currently only handles user_tokens (via CASCADE), but designed to be extended
+  when application data is added (matches, stats, etc.).
+  """
+  def merge_anonymous_user_into(anonymous_user, target_user) do
+    if anonymous_user.email || anonymous_user.id == target_user.id do
+      {:error, :invalid_merge}
+    else
+      Repo.transaction(fn ->
+        # TODO: When adding app data tables, transfer ownership here
+        # Example for future matches table:
+        # from(m in Match, where: m.user_id == ^anonymous_user.id)
+        # |> Repo.update_all(set: [user_id: target_user.id])
+
+        # Delete anonymous user (CASCADE handles tokens)
+        case Repo.delete(anonymous_user) do
+          {:ok, _deleted_user} -> target_user
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+    end
   end
 
   ## Settings

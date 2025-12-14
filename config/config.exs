@@ -44,6 +44,17 @@ config :fortymm_api, FortymmApiWeb.Endpoint,
 # at the `config/runtime.exs`.
 config :fortymm_api, FortymmApi.Mailer, adapter: Swoosh.Adapters.Local
 
+# Configure Hammer for rate limiting
+config :hammer,
+  backend:
+    {Hammer.Backend.ETS,
+     [
+       # 1 hour cleanup interval
+       expiry_ms: 60_000 * 60,
+       # 10 minutes
+       cleanup_interval_ms: 60_000 * 10
+     ]}
+
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",

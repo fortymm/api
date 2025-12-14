@@ -54,12 +54,14 @@ defmodule FortymmApi.Accounts.UserToken do
 
   The token is valid if it matches the value in the database and it has
   not expired (after @session_validity_in_days).
+
+  Anonymous users (with no email) have sessions that never expire.
   """
   def verify_session_token_query(token) do
     query =
       from token in by_token_and_context_query(token, "session"),
         join: user in assoc(token, :user),
-        where: token.inserted_at > ago(@session_validity_in_days, "day"),
+        where: is_nil(user.email) or token.inserted_at > ago(@session_validity_in_days, "day"),
         select: {%{user | authenticated_at: token.authenticated_at}, token.inserted_at}
 
     {:ok, query}

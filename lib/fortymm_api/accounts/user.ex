@@ -3,6 +3,7 @@ defmodule FortymmApi.Accounts.User do
   import Ecto.Changeset
 
   schema "users" do
+    field :username, :string
     field :email, :string
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
@@ -10,6 +11,58 @@ defmodule FortymmApi.Accounts.User do
     field :authenticated_at, :utc_datetime, virtual: true
 
     timestamps(type: :utc_datetime)
+  end
+
+  @doc """
+  A user changeset for anonymous user registration.
+  Generates a unique username automatically.
+  """
+  def anonymous_registration_changeset(attrs \\ %{}) do
+    # Generate username like "user_a3f9k2m1"
+    username =
+      :crypto.strong_rand_bytes(4)
+      |> Base.encode32(case: :lower, padding: false)
+      |> then(&"user_#{&1}")
+
+    %__MODULE__{}
+    |> cast(Map.put(attrs, :username, username), [:username])
+    |> validate_username()
+  end
+
+  @doc """
+  A user changeset for updating username.
+  """
+  def username_changeset(user, attrs, opts \\ []) do
+    user
+    |> cast(attrs, [:username])
+    |> validate_username(opts)
+  end
+
+  defp validate_username(changeset, _opts \\ []) do
+    changeset
+    |> validate_required([:username])
+    |> validate_length(:username, min: 3, max: 20)
+    |> validate_format(:username, ~r/^[a-zA-Z0-9_-]+$/,
+      message: "must contain only letters, numbers, underscores, and hyphens"
+    )
+    # Note: Don't lowercase - preserve original case for display
+    # Uniqueness enforced by DB index on lower(username)
+    |> unsafe_validate_unique(:username, FortymmApi.Repo)
+    |> unique_constraint(:username, name: :users_username_lower_index)
+  end
+
+  @doc """
+  A user changeset for adding email to an anonymous user.
+  This is the first step in upgrading an anonymous user.
+  """
+  def add_email_changeset(user, attrs, opts \\ []) do
+    if user.email do
+      add_error(change(user), :email, "already set")
+    else
+      user
+      |> cast(attrs, [:email])
+      |> validate_email(opts)
+    end
   end
 
   @doc """
@@ -72,10 +125,18 @@ defmodule FortymmApi.Accounts.User do
       Defaults to `true`.
   """
   def password_changeset(user, attrs, opts \\ []) do
-    user
-    |> cast(attrs, [:password])
-    |> validate_confirmation(:password, message: "does not match password")
-    |> validate_password(opts)
+    changeset =
+      user
+      |> cast(attrs, [:password])
+      |> validate_confirmation(:password, message: "does not match password")
+      |> validate_password(opts)
+
+    # Ensure user has email before setting password
+    if is_nil(get_field(changeset, :email)) do
+      add_error(changeset, :password, "cannot be set without an email address")
+    else
+      changeset
+    end
   end
 
   defp validate_password(changeset, opts) do
