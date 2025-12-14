@@ -40,6 +40,7 @@ defmodule FortymmApiWeb.Router do
     pipe_through [:api, :rate_limited]
 
     get "/session", SessionController, :index
+    patch "/account", AccountController, :update
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
