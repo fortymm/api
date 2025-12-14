@@ -7,6 +7,19 @@
 # General application configuration
 import Config
 
+config :fortymm_api, :scopes,
+  user: [
+    default: true,
+    module: FortymmApi.Accounts.Scope,
+    assign_key: :current_scope,
+    access_path: [:user, :id],
+    schema_key: :user_id,
+    schema_type: :id,
+    schema_table: :users,
+    test_data_fixture: FortymmApi.AccountsFixtures,
+    test_setup_helper: :register_and_log_in_user
+  ]
+
 config :fortymm_api,
   ecto_repos: [FortymmApi.Repo],
   generators: [timestamp_type: :utc_datetime]
@@ -30,6 +43,17 @@ config :fortymm_api, FortymmApiWeb.Endpoint,
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
 config :fortymm_api, FortymmApi.Mailer, adapter: Swoosh.Adapters.Local
+
+# Configure Hammer for rate limiting
+config :hammer,
+  backend:
+    {Hammer.Backend.ETS,
+     [
+       # 1 hour cleanup interval
+       expiry_ms: 60_000 * 60,
+       # 10 minutes
+       cleanup_interval_ms: 60_000 * 10
+     ]}
 
 # Configure esbuild (the version is required)
 config :esbuild,
