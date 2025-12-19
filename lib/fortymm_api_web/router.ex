@@ -24,6 +24,13 @@ defmodule FortymmApiWeb.Router do
       id_prefix: "api_session"
   end
 
+  pipeline :registration_rate_limited do
+    plug FortymmApiWeb.Plugs.RateLimiter,
+      limit: 10,
+      interval_ms: 60_000,
+      id_prefix: "api_registration"
+  end
+
   scope "/", FortymmApiWeb do
     pipe_through :browser
 
@@ -41,6 +48,12 @@ defmodule FortymmApiWeb.Router do
 
     get "/session", SessionController, :index
     patch "/account", AccountController, :update
+  end
+
+  scope "/api/v1", FortymmApiWeb do
+    pipe_through [:api, :registration_rate_limited]
+
+    post "/users", RegistrationController, :create
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
