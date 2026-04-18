@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat/docker  # temporary — remove once merged to main
   workflow_dispatch:
 
 jobs:
