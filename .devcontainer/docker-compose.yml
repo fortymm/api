@@ -1,0 +1,40 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspaces/api:cached
+    ports:
+      - "8000:8000"
+    command: sleep infinity
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/fortymm
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - fortymm
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fortymm
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fortymm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - fortymm
+
+volumes:
+  postgres-data:
+
+networks:
+  fortymm:
