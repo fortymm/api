@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/fortymm"
+    jwt_secret: str
+    jwt_lifetime_seconds: int = 60 * 60 * 24 * 30
 
 
 settings = Settings()
