@@ -14,9 +14,12 @@ from app.auth_deps import get_current_user
 from app.db import get_session
 from app.models import Role, User, UserRole
 
+# TODO(rbac): mutating endpoints below should also check the relevant
+# permission (roles.update / roles.assign) once permissions are real.
 router = APIRouter(prefix="/roles", dependencies=[Depends(get_current_user)])
 
 _MAX_SLUG_ATTEMPTS = 25
+_MAX_DESCRIPTION = 2000
 _SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
 
@@ -32,14 +35,14 @@ class RolePublic(BaseModel):
 
 class RoleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=_MAX_DESCRIPTION)
     # Accepted for forward-compat with the SPA; not persisted (fake permissions).
     permission_codes: list[str] | None = None
 
 
 class RoleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=_MAX_DESCRIPTION)
     permission_codes: list[str] | None = None
 
 
@@ -189,6 +192,7 @@ async def add_member(
     db: Annotated[AsyncSession, Depends(get_session)],
 ) -> None:
     obj = await _get_role(db, role)
+    # FK would reject a missing user with IntegrityError; pre-check is for the 404.
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
