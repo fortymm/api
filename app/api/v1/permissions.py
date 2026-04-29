@@ -12,6 +12,8 @@ from app.auth_deps import get_current_user
 from app.db import get_session
 from app.models import Permission
 
+# TODO(rbac): mutating endpoints below should require permissions.update once a
+# `requires_permission` dependency exists.
 router = APIRouter(prefix="/permissions", dependencies=[Depends(get_current_user)])
 
 _CODE_PATTERN = r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$"

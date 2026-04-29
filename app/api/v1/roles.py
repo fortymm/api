@@ -14,6 +14,8 @@ from app.auth_deps import get_current_user
 from app.db import get_session
 from app.models import Permission, Role, RolePermission, User, UserRole
 
+# TODO(rbac): mutating endpoints below should require the relevant permission
+# (roles.update / roles.assign) once a `requires_permission` dependency exists.
 router = APIRouter(prefix="/roles", dependencies=[Depends(get_current_user)])
 
 _MAX_SLUG_ATTEMPTS = 25
