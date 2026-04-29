@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/fortymm"
     jwt_secret: str
     jwt_lifetime_seconds: int = 60 * 60 * 24 * 30
+    root_path: str = ""
 
 
 settings = Settings()

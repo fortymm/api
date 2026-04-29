@@ -5,17 +5,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.schemas import UserPublic
 from app.auth_deps import get_current_user
 from app.db import get_session
-from app.models import Role, User, UserRole
+from app.models import Permission, Role, RolePermission, User, UserRole
 
-# TODO(rbac): mutating endpoints below should also check the relevant
-# permission (roles.update / roles.assign) once permissions are real.
+# TODO(rbac): mutating endpoints below should require the relevant permission
+# (roles.update / roles.assign) once a `requires_permission` dependency exists.
 router = APIRouter(prefix="/roles", dependencies=[Depends(get_current_user)])
 
 _MAX_SLUG_ATTEMPTS = 25
@@ -29,6 +29,7 @@ class RolePublic(BaseModel):
     name: str
     description: str | None
     member_count: int
+    permission_ids: list[UUID]
     created_at: datetime
     updated_at: datetime
 
@@ -36,14 +37,13 @@ class RolePublic(BaseModel):
 class RoleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     description: str | None = Field(default=None, max_length=_MAX_DESCRIPTION)
-    # Accepted for forward-compat with the SPA; not persisted (fake permissions).
-    permission_codes: list[str] | None = None
+    permission_ids: list[UUID] | None = None
 
 
 class RoleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
     description: str | None = Field(default=None, max_length=_MAX_DESCRIPTION)
-    permission_codes: list[str] | None = None
+    permission_ids: list[UUID] | None = None
 
 
 class RoleMember(BaseModel):
@@ -83,13 +83,73 @@ async def _get_role_with_count(db: AsyncSession, ident: str) -> tuple[Role, int]
     return row[0], int(row[1])
 
 
-def _to_public(role: Role, member_count: int) -> RolePublic:
+async def _permission_ids_for(db: AsyncSession, role_id: UUID) -> list[UUID]:
+    stmt = (
+        select(RolePermission.permission_id)
+        .where(RolePermission.role_id == role_id)
+        .order_by(RolePermission.permission_id)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def _permission_ids_by_role(db: AsyncSession, role_ids: list[UUID]) -> dict[UUID, list[UUID]]:
+    if not role_ids:
+        return {}
+    stmt = (
+        select(RolePermission.role_id, RolePermission.permission_id)
+        .where(RolePermission.role_id.in_(role_ids))
+        .order_by(RolePermission.role_id, RolePermission.permission_id)
+    )
+    grouped: dict[UUID, list[UUID]] = {rid: [] for rid in role_ids}
+    for role_id, permission_id in (await db.execute(stmt)).all():
+        grouped[role_id].append(permission_id)
+    return grouped
+
+
+async def _set_role_permissions(
+    db: AsyncSession, role_id: UUID, permission_ids: list[UUID]
+) -> list[UUID]:
+    desired = set(permission_ids)
+    if desired:
+        found = set(
+            (await db.execute(select(Permission.id).where(Permission.id.in_(desired)))).scalars()
+        )
+        missing = desired - found
+        if missing:
+            ids = ", ".join(sorted(str(i) for i in missing))
+            raise HTTPException(status_code=400, detail=f"Unknown permission ids: {ids}")
+
+    current = set(
+        (
+            await db.execute(
+                select(RolePermission.permission_id).where(RolePermission.role_id == role_id)
+            )
+        ).scalars()
+    )
+    to_remove = current - desired
+    to_add = desired - current
+
+    if to_remove:
+        await db.execute(
+            delete(RolePermission).where(
+                RolePermission.role_id == role_id,
+                RolePermission.permission_id.in_(to_remove),
+            )
+        )
+    for pid in to_add:
+        db.add(RolePermission(role_id=role_id, permission_id=pid))
+
+    return sorted(desired)
+
+
+def _to_public(role: Role, member_count: int, permission_ids: list[UUID]) -> RolePublic:
     return RolePublic(
         id=role.id,
         slug=role.slug,
         name=role.name,
         description=role.description,
         member_count=member_count,
+        permission_ids=permission_ids,
         created_at=role.created_at,
         updated_at=role.updated_at,
     )
@@ -105,8 +165,9 @@ async def list_roles(
         .group_by(Role.id)
         .order_by(Role.created_at)
     )
-    result = await db.execute(stmt)
-    return [_to_public(role, int(count)) for role, count in result.all()]
+    rows = (await db.execute(stmt)).all()
+    perms_by_role = await _permission_ids_by_role(db, [role.id for role, _ in rows])
+    return [_to_public(role, int(count), perms_by_role.get(role.id, [])) for role, count in rows]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -115,18 +176,29 @@ async def create_role(
     db: Annotated[AsyncSession, Depends(get_session)],
 ) -> RolePublic:
     base = _slugify(payload.name)
+    role: Role | None = None
     for attempt in range(_MAX_SLUG_ATTEMPTS):
         slug = base if attempt == 0 else f"{base}-{attempt + 1}"
-        role = Role(slug=slug, name=payload.name, description=payload.description)
-        db.add(role)
+        candidate = Role(slug=slug, name=payload.name, description=payload.description)
+        db.add(candidate)
         try:
-            await db.commit()
+            await db.flush()
         except IntegrityError:
             await db.rollback()
             continue
-        await db.refresh(role)
-        return _to_public(role, 0)
-    raise HTTPException(status_code=500, detail="Could not allocate role slug")
+        role = candidate
+        break
+    if role is None:
+        raise HTTPException(status_code=500, detail="Could not allocate role slug")
+
+    perms = (
+        await _set_role_permissions(db, role.id, payload.permission_ids)
+        if payload.permission_ids is not None
+        else []
+    )
+    await db.commit()
+    await db.refresh(role)
+    return _to_public(role, 0, perms)
 
 
 @router.get("/{role}")
@@ -135,7 +207,7 @@ async def get_role(
     db: Annotated[AsyncSession, Depends(get_session)],
 ) -> RolePublic:
     obj, count = await _get_role_with_count(db, role)
-    return _to_public(obj, count)
+    return _to_public(obj, count, await _permission_ids_for(db, obj.id))
 
 
 @router.patch("/{role}")
@@ -145,12 +217,17 @@ async def update_role(
     db: Annotated[AsyncSession, Depends(get_session)],
 ) -> RolePublic:
     obj, count = await _get_role_with_count(db, role)
-    data = payload.model_dump(exclude_unset=True, exclude={"permission_codes"})
+    data = payload.model_dump(exclude_unset=True, exclude={"permission_ids"})
     for field, value in data.items():
         setattr(obj, field, value)
+    perms = (
+        await _set_role_permissions(db, obj.id, payload.permission_ids)
+        if payload.permission_ids is not None
+        else await _permission_ids_for(db, obj.id)
+    )
     await db.commit()
     await db.refresh(obj)
-    return _to_public(obj, count)
+    return _to_public(obj, count, perms)
 
 
 @router.delete("/{role}", status_code=status.HTTP_204_NO_CONTENT)
