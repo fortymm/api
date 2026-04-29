@@ -1,28 +1,28 @@
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import decode_token, encode_token
+from app.api.v1.permissions import router as permissions_router
+from app.api.v1.roles import router as roles_router
+from app.api.v1.schemas import UserPublic
+from app.auth import encode_token
+from app.auth_deps import parse_bearer_user
 from app.db import get_session
 from app.models import User
 from app.usernames import generate_username
 
 router = APIRouter(prefix="/v1")
+router.include_router(roles_router)
+router.include_router(permissions_router)
 
 _MAX_USERNAME_ATTEMPTS = 5
 
 
 class PingResponse(BaseModel):
     data: str
-
-
-class UserPublic(BaseModel):
-    id: UUID
-    username: str
 
 
 class SessionResponse(BaseModel):
@@ -40,7 +40,7 @@ async def create_session(
     db: Annotated[AsyncSession, Depends(get_session)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> SessionResponse:
-    user = await _resolve_user(db, authorization)
+    user = await parse_bearer_user(db, authorization)
     if user is None:
         user = await _create_user(db)
 
@@ -48,16 +48,6 @@ async def create_session(
         token=encode_token(user.id),
         user=UserPublic(id=user.id, username=user.username),
     )
-
-
-async def _resolve_user(db: AsyncSession, authorization: str | None) -> User | None:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        return None
-    token = authorization.split(" ", 1)[1].strip()
-    user_id = decode_token(token)
-    if user_id is None:
-        return None
-    return await db.get(User, user_id)
 
 
 async def _create_user(db: AsyncSession) -> User:

@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator  # noqa: E402
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy import event  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
     async_sessionmaker,
@@ -26,6 +27,13 @@ async def client() -> AsyncIterator[AsyncClient]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_sqlite_fks(dbapi_conn, _record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON")
+        cursor.close()
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -42,3 +50,12 @@ async def client() -> AsyncIterator[AsyncClient]:
     finally:
         app.dependency_overrides.pop(get_session, None)
         await engine.dispose()
+
+
+@pytest.fixture
+async def me(client: AsyncClient) -> dict:
+    response = await client.post("/v1/session")
+    assert response.status_code == 200
+    body = response.json()
+    body["headers"] = {"Authorization": f"Bearer {body['token']}"}
+    return body
