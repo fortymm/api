@@ -12,6 +12,8 @@ dependencies = [
     "pydantic-settings>=2.6",
     "pyjwt>=2.9",
     "wonderwords>=2.2",
+    "arq>=0.26",
+    "ortools>=9.11",
 ]
 
 [dependency-groups]
